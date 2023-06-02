@@ -1,0 +1,6 @@
+# Ignore pycache
+__pycache__/
+*.py[cod]
+
+# Ignore everything inside env
+env/

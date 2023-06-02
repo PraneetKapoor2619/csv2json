@@ -1,0 +1,783 @@
+@
+CSV to JSON Convertor
+=====================
+
+**Author: Praneet Kapoor**
+
+Problem Statement
+-----------------
+
+Build a script that generates a JSON file.
+Here the input is file directory which contains a bunch of CSV files. All the files under the directory should
+be read and their JSON should be generated.
+
+**Input:**
+A directory containing a bunch of CSV files which are to be read.
+
+**Output:**
+A JSON file containing the data inside the CSV files present under the directory supplied as an input to the
+program.
+   {"file_details":[{"filed_delimiter":",",
+               "file_name":"only alphabets and special characters of  file name 1",
+               "file_schema":[column1,column2,etc..],
+              "file_content":["file data"]},
+            {"filed_delimiter":";",
+               "file_name":"only alphabets and special characters of  file name 2",
+               "file_schema":[column1,column2,etc..],
+              "file_content":["file data"]}
+           ]}
+
+**Example:**
+
+**Input:**
+"C:\Users\rposam\folder_structure\problem_statement2\inputs"
+
+**Output:**
+    {"file_details":[
+                {
+                    "file_delimiter":",",
+                    "file_name":"annual-enterprise-survey",
+                    "file_schema":[Year,Industry_aggregation_NZSIOC,etc...],
+                    "file_content":["2021,Level 1,etc..."]
+                }
+    ]}
+    
+**Note:** file delimiter should be auto detected based on the file content
+
+
+
+
+@ 
+Experiments with CSV Module
+===========================
+
+@
+<<csvexp1.py>>=
+import os
+import sys
+import csv
+
+os.system('clear')
+<<Get current working directory>>
+<<Check the datatype of the csv object>>
+<<Find the delimiter used in the CSV file>>
+<<Reading damaged csv file>>
+
+@
+Firstly, I wanna know the datatype I get, and whether I can access individual rows or not.
+
+@
+<<Check the datatype of the csv object>>=
+with open('./exp_data/data1.csv', 'r') as csvfile:
+    csvdata = csv.reader(csvfile, delimiter = ';')
+    print(csvdata)
+
+@
+I would also like to know the delimiter used in a CSV file. If a traditional delimiter is used, we can used
+Sniffer class in the CSV module. For non-traditional CSV files, it will break.
+
+@
+<<Find the delimiter used in the CSV file>>=
+with open('./exp_data/data1.csv', 'r') as csvfile:
+    sniffer = csv.Sniffer()
+    dialect = sniffer.sniff(csvfile.readline())
+    print(f"Delimiter used is {dialect.delimiter}")
+    csvfile.seek(0)
+    csvdata = csv.reader(csvfile, delimiter = dialect.delimiter)
+    for datarow in csvdata:
+        print(datarow)
+
+@
+Okay, so when we use csv.reader(), we get a csv.reader object. Then when we iteratively call this object, it
+returns to us consecutive rows of the CSV file it represents.
+
+I also need to know the current working directory, as that might help me in knowing my position relative to
+the directory we are reading.
+
+@
+<<Get current working directory>>=
+import pathlib
+
+path = pathlib.Path(__file__).parent.resolve()
+print(f"Current path: {path}")
+
+@
+What would happend if I read a somewhat damaged CSV file??
+By damaged CSV file I mean a CSV file in which all columns are not filled for all the rows. Such a file might
+also be using a different delimiter. 
+
+@
+<<Reading damaged csv file>>=
+print()
+with open('./exp_data/data2.csv', 'r') as csvfile:
+    sniffer = csv.Sniffer()
+    dialect = sniffer.sniff(csvfile.readline())
+    print(f"First line: {csvfile.readline()}")
+    print(f"Delimiter used is {dialect.delimiter}")
+    csvfile.seek(0)
+    csvdata = csv.reader(csvfile, delimiter = dialect.delimiter)
+    for datarow in csvdata:
+        print(datarow)
+
+
+
+
+@
+Experiments with JSON Module
+============================
+
+I will need to convert the CSVFile object into a JSON object. I think that I can use the JSON and pickle
+module to achive this. Time for some experiments.
+
+@
+<<jsonexp1.py>>=
+import os
+import sys
+import time
+
+import json
+
+@
+Pickle module is not secure according Python's official documentation. Still importing it in my experiments
+because God knows when I might need it.
+
+@
+<<jsonexp1.py>>=
+import pickle
+
+<<Class object to JSON>>
+
+@
+Converting an object to a JSON string
+-------------------------------------
+
+obj.__dict__ returns a dictionary containing the attributes of a class as keys and their respective values. I
+can pass this string to json.dumps() to get my JSON string. Why dumps()? Because dump(s) method is for
+serialization: conversion of an object to a JSON string. load(s) is for deserialization: Converting a JSON
+string to a valid object.
+
+<<Class object to JSON>>=
+class Foo:
+    def __init__(self):
+        self.x = 10
+        self.y = 12
+        self.matrix = [[1, 2, 3],
+                        [5, 6, 7],
+                        [8, 9, 10]]
+    def mul(self):
+        self.x = self.x * self.y
+
+obj1 = Foo()
+obj1_json = json.dumps(obj1.__dict__)
+print(obj1_json)
+
+@
+It is clear that I will need to develop my own "JSON convertor". So, starting with that...
+
+@
+Rough idea: os.walk() and depth of search, By default = 1
+
+
+
+
+@
+Design of the coverter
+======================
+
+Basic Idea: Atomic Operations
+-----------------------------
+
+We can develop our CSV to JSON convertor in the form of a bunch of fundamental classes which allow certain
+fundamental operations on their objects.
+
+CSV:
+    * __init__()
+        file_name: which is of course going to be unique
+        file_schema: the name of each column in the schema
+        file_content: rows of data 
+    * read()
+    * write()
+    * read_json()
+    * write_json()
+    * read_excel()
+    * write_excel()
+    * __add__()
+
+Can you "add" two CSV files??? Doesn't make sense unless they represent the same data.
+We can "add"/"insert" into a JSON.
+
+We can therefore have the following two classes: CSV and JSON
+
+CSV:
+    * __init__(filename = Optional arg):
+        - file_name:
+        - file_delimiter: 
+        - file_schema:
+        - file_content:
+        if filename is not an empty string and is a valid file_path + valid_filename:
+            set the values and read the csv file...
+            We can use the Sniffer in csv module to sniff out the delimiter, but it doesn't work correctly...
+            (See my experiment with CSV module)
+    * isValidCSV():
+        if file exists and you are able to sniff out the correct delimiter and schema:
+            return True and set file_name (drop extension) and file_delimiter.
+        else:
+            return False and set file_name = "" and file_delimiter = "" 
+    * read():
+        Must empty the schema and file_content
+        Reads a CSV file.
+        Use the traditional csv.reader() function. 
+    * write():
+        Write CSV to a file.
+        Use the traditional csv.write() function.
+
+JSON:
+    * __init__():
+        Pass the object you want to convert to JSON to the object initializer/constructor.
+
+    * __add__():
+
+    * insert():
+
+    * __sub__():
+
+    * remove():
+ 
+
+
+
+@
+CSV Class Defintion
+===================
+
+@
+<<csvfile.py>>=
+import os
+import sys
+import time
+
+import csv
+import ntpath
+import platform
+
+class CSVFile:
+    def __init__(self, filename):
+        self.file_name = None
+        self.file_path = None
+        self.file_delimiter = None
+        self.file_schema = None
+        self.file_content = None
+        self.set_filename(filename)
+
+    def is_csvfile_valid(self, filename):
+        <<is_csvfile_valid>>
+    
+    def set_filename(self, filename):
+        <<set_filename>>
+    
+    def guess_delimiter(self, lines):
+        <<guess_delimiter>>
+
+    def loadf(self):
+        <<Load CSV data from file>>
+    
+    def dumpf(self, filename = '', N = None):
+        <<Write CSV data to the file>>
+
+@
+Why I am using a setter for filename?
+-------------------------------------
+
+Whenever a filename is used, it should be made sure that:
+    1. The file exists for real
+    2. If it exists and is being read as a csv file, then it should have a delimiter.
+
+These "validity checks" should be done everytime the user sets the name of the file. That's why I am using a
+setter: the user should follow the API lest be responsible for undefined behaviour.
+
+This setter firstly checks whether the file is a valid CSV file or not. This it does by checking the existence
+and size of the file and then guessing the delimiter. Finally, we have to get the name of the file and its
+full path, the latter being used during data R/W operations. When getting the path of the file, we need to
+format it according to the OS we are using.
+
+NOTE: We need to make sure that the full path is not included in the serialized object.
+
+@
+<<set_filename>>=
+self.file_delimiter = self.is_csvfile_valid(filename)
+if self.file_delimiter:
+    self.file_name = ntpath.basename(filename)
+    self.file_name = self.file_name[:self.file_name.rfind('.')]
+    self.file_path = ntpath.realpath(filename)
+    os_type = platform.system()
+    if os_type == 'Linux' or os_type == 'Darwin':
+        self.file_path = self.file_path.replace('\\', '/')
+
+@
+Algorithm for checking the validity of the CSV file
+---------------------------------------------------
+
+1. Check whether it exists or not. 
+    -if yes: continue
+    -else: raise exception and exit
+
+2. Check the size of the file. 
+    -if size == 0: exit
+    -else continue
+
+3. Obtain the delimeter
+    -Call guess_delimiter() method to guess the delimiter.
+
+<<is_csvfile_valid>>=
+try:
+    fp = open(filename, 'r')
+except Exception:
+    raise Exception(f"{filename} not found.")
+
+lines = fp.readlines()
+fp.close()
+if not lines:
+    raise Exception(f"{filename} is empty.")
+
+delimiter = self.guess_delimiter(lines)
+
+return delimiter
+
+@
+Algorithm for guessing the delimiter in a CSV file
+--------------------------------------------------
+
+This function will accept a list of lines making up the CSV file. Such a list can be easily obtained by
+readlines() method.
+1. Set the size of the chunk. 
+    If the number of lines < 50, 
+        then set chunk size = number of lines
+    else
+        set it to 50
+2. Make a dictionary of all the characters appearing in the chunk (ignore newline char).
+3. Compute the mean number of columns in a row for each key in the dictionary.
+4. Compute the mean error for each key in the dictionary.
+5. Sort the dictionary according to the error.
+
+6. Compute the mean column width for the first column (as it will always be there) 
+    (split by character, len of element at index = 0)
+7. Compute the mean column width error for the centre column
+
+8. Total error = mean error in number of columns + mean error in width of columns
+
+
+<<guess_delimiter>>=
+N = 0
+if len(lines) < 50:
+    N = len(lines)
+else:
+    N = 50
+
+char_set = set(''.join(lines[:N]))
+char_set.remove('\n')
+char_dict = {key: 0 for key in char_set if not key.isalnum() and key != ' '}
+merr_no_cols = char_dict.copy()
+merr_width_cols = char_dict.copy()
+
+for key in merr_no_cols.keys():
+    cols = 0
+    for line in lines:
+        cols += len(line.split(key))
+    cols /= N
+    merr_no_cols[key] = cols
+
+for key, mean_cols_no in merr_no_cols.items():
+    error = 0
+    for line in lines:
+        error = abs(len(line.split(key)) - (mean_cols_no))
+    error /= N
+    merr_no_cols[key] = error
+
+for key in merr_width_cols.keys():
+    width = 0
+    for line in lines:
+        width += len(line.split(key)[0])
+    width /= N
+    merr_width_cols[key] = width
+
+for key, mean_col_width in merr_width_cols.items():
+    error1 = 0
+    for line in lines:
+        i = len(line.split(key))
+        error1 = abs(len(line.split(key)[0]) - (mean_col_width))
+        error2 = abs(len(line.split(key)[i // 2]) - (mean_col_width))
+    error1 /= N
+    error2 /= N
+    merr_width_cols[key] = (error1 + error2)/2
+
+for char in char_dict.keys():
+    char_dict[char] = merr_no_cols[char] + merr_width_cols[char]
+
+sorted_list = sorted(char_dict.items(), key = lambda item: (item[1], item[0]))
+delimiter = sorted_list[0][0]
+#print(f"Delimiter guessed to be {delimiter}")
+
+return delimiter
+
+@
+Loading and Dumping CSV Data
+----------------------------
+@
+<<Load CSV data from file>>=
+with open(self.file_path, 'r') as csvfile:
+    csvdata = csv.reader(csvfile, delimiter = self.file_delimiter)
+    csvdata = list(csvdata)
+    self.file_schema = csvdata[0]
+    self.file_content = csvdata[1:]
+
+@
+When writing to a CSV file, the user might want to write to some file other than the src file. And might also
+want to write only a fixed number of rows to the file. This flexibility is implemented by the parameters
+`filename` and `N`. If filename is '', then the src file will be written to. If N is None, then all the data
+rows will be written to the file, else only the first N rows will be written. 
+<<Write CSV data to the file>>=
+if filename == '':
+    filename = self.file_path
+if N is None:
+    N = len(self.file_content)
+with open(filename, 'w') as csvfile:
+    writerobj = csv.writer(csvfile, delimiter = self.file_delimiter)
+    writerobj.writerow(self.file_schema)
+    writerobj.writerows(self.file_content[:N])
+
+
+
+
+@
+C2J Class Definition
+====================
+This class should be responsible for converting a CSVFile object to JSON according to the format given below.
+
+[{"filed_delimiter":",",
+               "file_name":"only alphabets and special characters of  file name 1",
+               "file_schema":[column1,column2,etc..],
+              "file_content":["file data"]}]
+
+We should be able to club together multiple C2J objects in a list:
+
+[{"filed_delimiter":",",
+            "file_name":"only alphabets and special characters of  file name 1",
+            "file_schema":[column1,column2,etc..],
+            "file_content":["file data"]},
+        {"filed_delimiter":";",
+            "file_name":"only alphabets and special characters of  file name 2",
+            "file_schema":[column1,column2,etc..],
+            "file_content":["file data"]}
+        ]
+
+And then when we write this JSON object to a file, we can put this list inside a dict, and write it out using
+dump():
+
+{"file_details":[{"filed_delimiter":",",
+            "file_name":"only alphabets and special characters of  file name 1",
+            "file_schema":[column1,column2,etc..],
+            "file_content":["file data"]},
+        {"filed_delimiter":";",
+            "file_name":"only alphabets and special characters of  file name 2",
+            "file_schema":[column1,column2,etc..],
+            "file_content":["file data"]}
+        ]}
+
+@
+The class will be having the following structure:
+
+C2J:
+    * __init__(CSVFile object): MUST PASS CSVFile object. It is non-negotiable!! 
+
+    * __add__(self, obj): For adding two C2J objects together.
+
+    * convert(): Convert the CSVFile object to a dict, this dict should be inside a dict.
+
+    * dump(): Write the object to a file. Try to do prettyprinting... (use indent = 4 in dump())
+
+@
+<<c2j.py>>=
+import os
+import sys
+import time
+
+import csv
+import json
+
+from csvfile import CSVFile
+
+
+class C2J:
+    def __init__(self, csvfile = ''):
+        self.csvfile = {"file_details": []}
+        if isinstance(csvfile, CSVFile):
+            self.convert(csvfile)
+    
+    def __add__(self, obj):
+        <<Adding two C2J objects>>
+    
+    def convert(self, csvfile):
+        <<Convert CSVFile object to a Dict>>
+    
+    def dump(self, filename):
+        <<Write the JSON to a file>>
+
+
+@
+<<Adding two C2J objects>>=
+concat = C2J()
+concat.csvfile['file_details'] = self.csvfile['file_details'] + obj.csvfile['file_details']
+return concat
+
+
+@
+<<Convert CSVFile object to a Dict>>=
+if not isinstance(csvfile, CSVFile):
+    raise TypeError(f"{csvfile} is not of type CSVFile")
+csvfile = csvfile.__dict__
+del csvfile['file_path']
+self.csvfile['file_details'] = [csvfile]
+
+
+@
+Writing the JSON to a file
+--------------------------
+
+<<Write the JSON to a file: Version 1>>=
+with open(filename, 'w') as jdumpfile:
+    json.dump(self.csvfile, jdumpfile, indent = 4)
+
+@
+I can use json.dump() function, but it is not givingt the 'level-wise' indentation that I want. So, I will
+write my own pretty printer.
+Here is a simple algorithm for pretty printing rows:
+1. brace counter = -(the number of irrelevent braces in the beginning of the file)
+    row flag = False
+2. read a line
+3. if the line has '[' in it, 
+        brace counter = brace counter + 1
+        if brace counter > 0
+        row flag = True
+    if the line has ']' in it,
+        brace counter = brace counter - 1
+        if brace counter >= 0
+        row flag = False
+4. if row flag is True and brace_count :
+        do your newline and tab stripping thingy
+    else:
+        concatenate strings line a normal person.
+
+
+<<Write the JSON to a file>>=
+print('Formatting JSON string (this may take time)...')
+json_string = json.dumps(self.csvfile, indent = 2)
+json_string = json_string.split('\n')
+json_string_mod = ""
+brace_count = -1
+for i in range(len(json_string)):
+    line = json_string[i]
+    if '[' in line:
+        json_string_mod += line
+        if '[' in json_string[i + 1]:
+            json_string_mod += '\n'
+        brace_count += line.count('[')
+        continue
+    elif ']' in line:
+        brace_count -= line.count(']')
+        json_string_mod = json_string_mod[:-1] + line.strip()
+        json_string_mod += '\n'
+        continue
+    if brace_count == 0:
+        json_string_mod += line
+        json_string_mod += '\n'
+    else:
+        line = line.strip()
+        json_string_mod += line + ' '
+print('JSON string has been formatted.')
+with open(filename, 'w') as json_dump_file:
+    json_dump_file.write(json_string_mod)
+    print(f'JSON data written to {filename}')
+
+
+
+
+@
+Main Program: csv2json.py
+=========================
+
+The program csv2json.py imports csvfile and c2j modules besides others. Given the name of a CSV file, it can
+convert it into a JSON and save it into another file. We can also construct JSONs of all the CSV files present
+under a directory, or concatenate these JSONs.
+
+
+Command format
+--------------
+
+1. For converting a single CSV file to a JSON file.
+python3 csv2json.py path/to/CSV/file/filename -o path/to/JSON/file/filename
+
+2. For converting multiple CSV files under a directory to JSON files.
+python3 csv2json.py -dn path/to/CSV/files -o path/to/JSON/files
+-d or --depth
+
+n is the search depth. Default value is 1.
+
+3. For converting multiple CSV files under a directory to JSON, concatenating this JSON and then saving it.
+python3 csv2json.py -dn -c path/to/CSV/files -o path/to/JSON/files
+-c or --concat
+
+4. For help:
+-h or --help
+
+
+Algorithm
+---------
+
+1. Check whether any command line agruments have been passed or not. 
+    if they have not been passed, then raise and exception.
+2. Formatting the command line args and making sense out of them.
+    argv = sys.argv[1:]
+    argv = sorted(argv)
+    Use a bunch of if else statements to decide the mode in which we need to operate.
+
+
+The Code
+--------
+
+<<csv2json.py>>=
+import os
+import sys
+import time
+
+import ntpath
+import pathlib
+
+import re
+import csv
+import json
+
+from csvfile import CSVFile
+from c2j import C2J
+
+
+def main():
+    <<Read and interpret command line args>>
+    <<Create CSVFile and C2J object(s)>>
+    <<Write C2J object(s)>>
+
+main()
+
+@
+<<Read and interpret command line args>>=
+argvlist = sys.argv[1:]
+depth = False
+concatenate = False
+input_path = ''
+output_path = ''
+
+for argv in argvlist:
+    if '-d' in argv or '--depth' in argv:
+        extr = re.findall('[0-9]+', argv)
+        depth = int(extr[0])
+    elif '-c' in argv or '--concat' in argv:
+        concatenate = True
+    elif '-o' in argv:
+        pass
+    else:
+        if input_path == '':
+            input_path = argv
+        else:
+            output_path = argv
+
+@
+Now we can introduce a bit of strictness here. If -d and -c argument is being used, then you must have
+supplied a directory name and not a filename. 
+An interesting case would be when -c was provided, but -d wasn't. In this case depth should be set to 1.
+
+<<Read and interpret command line args>>=
+if depth is not False or concatenate is not False:
+    if depth is False and concatenate is not False:
+        depth = 1
+    if not os.path.isdir(input_path):
+        raise Exception(f'{input_path} is not a directory')
+    if concatenate is False:
+        if not os.path.isdir(output_path):
+            raise Exception(f'{output_path} is not a directory')
+else:
+    if not os.path.isfile(input_path):
+        raise Exception(f'File {input_path} does not exists')
+
+@
+Once these checks have been performed, now we can form a list of files which are to be considered as inputs.
+
+<<Read and interpret command line args>>=
+input_files = []
+if depth is not False:
+    for (dirpath, subdirs, filenames) in os.walk(input_path):
+        if depth == 0:
+            break
+        for filename in filenames:
+            if '.csv' in filename:
+                input_files.append(dirpath + os.sep + filename)
+        depth -= 1
+else:
+    input_files.append(input_path)
+print(input_files)
+
+@
+We will now create a CSVFile object for every CSV file present in input_files.
+
+<<Create CSVFile and C2J object(s)>>=
+csvfile_objs = []
+c2j_objs = []
+for file in input_files:
+    csvfile_obj = CSVFile(file)
+    csvfile_obj.loadf()
+    c2j_obj = C2J(csvfile_obj)
+    csvfile_objs.append(csvfile_obj)
+    c2j_objs.append(c2j_obj)
+
+
+@
+Writing C2J Objects
+-------------------
+
+Now we need to write C2J objects to file(s). Make sure to note the mode. Mode can be easily detected by
+knowing the size of the input_files list.
+
+@
+<<Write C2J object(s) V1>>=
+c2j_sum = C2J()
+for i in range(len(csvfile_objs)):
+    if depth is False and concatenate is False:
+        c2j_objs[i].dump(output_path)
+    elif depth is not False and concatenate is False:
+        filename = csvfile_objs[i].file_name + '.json'
+        c2j_objs[i].dump(output_path + os.sep + filename)
+    elif depth is not False and concatenate is True:
+        c2j_sum += c2j_objs[i]
+    if len(input_files) == 1:
+        c2j_objs[i].dump(output_path)
+if concatenate is True:
+    c2j_sum.dump(output_path)
+
+
+@
+<<Write C2J object(s)>>=
+c2j_sum = C2J()
+for i in range(len(csvfile_objs)):
+    if len(input_files) == 1:
+        c2j_objs[i].dump(output_path)
+    elif len(input_files) > 1:
+        if concatenate is True:
+            c2j_sum += c2j_objs[i]
+        elif concatenate is False:
+            filename = csvfile_objs[i].file_name + '.json'
+            c2j_objs[i].dump(output_path + os.sep + filename)
+if concatenate is True:
+    c2j_sum.dump(output_path)
+
+
+
+@
+END OF THE DOCUMENT
